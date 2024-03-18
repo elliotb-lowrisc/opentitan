@@ -13,8 +13,10 @@ class uart_scoreboard extends cip_base_scoreboard #(.CFG_T(uart_env_cfg),
   // local variables
   local bit tx_enabled;
   local bit rx_enabled;
-  local int uart_tx_clk_pulses;
-  local int uart_rx_clk_pulses;
+  local int uart_tx_clk_pulses_at_addr_phase;
+  local int uart_rx_clk_pulses_at_addr_phase;
+  local int rx_ignore_period_counter;
+  local int rx_ignore_period_counter_at_addr_phase;
 
   // expected values
   local bit tx_full_exp, rx_full_exp, tx_empty_exp, rx_empty_exp, tx_idle_exp, rx_idle_exp;
@@ -63,6 +65,7 @@ class uart_scoreboard extends cip_base_scoreboard #(.CFG_T(uart_env_cfg),
       process_uart_tx_fifo();
       process_uart_rx_fifo();
       process_nf_cov();
+      update_rx_ignore_period_counter();
     join_none
   endtask
 
@@ -103,10 +106,15 @@ class uart_scoreboard extends cip_base_scoreboard #(.CFG_T(uart_env_cfg),
     end
   endtask
 
+  function int uart_clk_periods_to_whole_main_clk_periods(real uart_clk_periods);
+    return int'($ceil(uart_clk_periods * cfg.m_uart_agent_cfg.vif.uart_clk_period /
+                      (cfg.clk_rst_vif.clk_period_ps * 1ps)));
+  endfunction
+
   virtual task process_uart_rx_fifo();
     uart_item item;
     forever begin
-      uart_rx_fifo.get(item);
+      uart_rx_fifo.get(item); // item comes from monitor rx_analysis_port
       `uvm_info(`gfn, $sformatf("received uart rx item:\n%0s", item.sprint()), UVM_HIGH)
 
       if (rx_enabled) begin
@@ -125,6 +133,15 @@ class uart_scoreboard extends cip_base_scoreboard #(.CFG_T(uart_env_cfg),
         end
         if (!parity_err && item.stop_bit == 1) begin // no parity/frame error
           if (rx_q.size < RxFifoDepth) begin
+            // Set rx_ignore_period_counter going by calculating the period to ignore from the end
+            // of the UART-clock-based ignore period (the final RX bit). This is a combination of
+            // delays all based on the period of the main clock (CDC sync, majority filter, RX
+            // logic delay).
+            rx_ignore_period_counter = ((cfg.en_dv_cdc ? 2 : 0) +
+                                        (ral.ctrl.nf.get_mirrored_value() ? 1 : 0) +
+                                        1);
+            `uvm_info(`gfn, $sformatf("rx_ignore_period_counter set to %0d",
+                                      rx_ignore_period_counter), UVM_MEDIUM)
             rx_q.push_back(item);
             predict_rx_watermark_intr();
           end
@@ -136,6 +153,27 @@ class uart_scoreboard extends cip_base_scoreboard #(.CFG_T(uart_env_cfg),
         end // no parity/frame error
       end // if (rx_enabled)
     end // forever
+  endtask
+
+  virtual task update_rx_ignore_period_counter();
+    forever begin
+      if (rx_ignore_period_counter > 0) begin
+        // Wait and align with main clock
+        cfg.clk_rst_vif.wait_clks(1);
+        // Decrement counter if we are past the end of the final RX bit and have not been reset.
+        // Test for `uart_rx_clk_pulses != 1` instead of `== 0` just in case the test sequence
+        // starts driving another RX byte before `rx_ignore_period_counter` reaches zero/end.
+        if (uart_vif.uart_rx_clk_pulses != 1 && rx_ignore_period_counter > 0) begin
+          rx_ignore_period_counter--;
+        end
+        if (rx_ignore_period_counter == 0) begin
+          `uvm_info(`gfn, "rx_ignore_period_counter finished", UVM_MEDIUM)
+        end
+      end else begin
+        // Wait for counter to be set to non-zero value
+        @(rx_ignore_period_counter);
+      end
+    end
   endtask
 
   virtual function void predict_tx_watermark_intr(uint tx_q_size = tx_q.size);
@@ -151,8 +189,23 @@ class uart_scoreboard extends cip_base_scoreboard #(.CFG_T(uart_env_cfg),
   // we don't model uart cycle-accurately, ignore checking when item is just/almost finished
   function bit is_in_ignored_period(uart_dir_e dir);
     case (dir)
-      UartTx: return uart_tx_clk_pulses inside `TX_IGNORED_PERIOD;
-      UartRx: return uart_rx_clk_pulses inside `RX_IGNORED_PERIOD;
+      UartTx: begin
+        return uart_tx_clk_pulses_at_addr_phase inside `TX_IGNORED_PERIOD;
+      end
+      UartRx: begin
+        if (uart_rx_clk_pulses_at_addr_phase inside `RX_IGNORED_PERIOD) begin
+          // UART-clock-based RX ignore period
+          return 1;
+        end else if (rx_ignore_period_counter_at_addr_phase > 0) begin
+          // Main-clock-based RX ignore period
+          return 1;
+        end
+        return 0;
+      end
+      default begin
+        `uvm_error(`gfn, "unexpected uart_dir_e")
+        return 0;
+      end
     endcase
   endfunction
 
@@ -177,8 +230,10 @@ class uart_scoreboard extends cip_base_scoreboard #(.CFG_T(uart_env_cfg),
       end
 
       // need to store uart_tx/tx_clk_pulses earlier to predict reg value correctly
-      uart_tx_clk_pulses   = uart_vif.uart_tx_clk_pulses;
-      uart_rx_clk_pulses   = uart_vif.uart_rx_clk_pulses;
+      uart_tx_clk_pulses_at_addr_phase    = uart_vif.uart_tx_clk_pulses;
+      uart_rx_clk_pulses_at_addr_phase    = uart_vif.uart_rx_clk_pulses;
+      // save RX ignore counter value at address phase of TL transaction
+      rx_ignore_period_counter_at_addr_phase = rx_ignore_period_counter;
       // save fifo level at address phase
       tx_q_size_at_addr_phase = tx_q.size;
       rx_q_size_at_addr_phase = rx_q.size;
@@ -229,8 +284,10 @@ class uart_scoreboard extends cip_base_scoreboard #(.CFG_T(uart_env_cfg),
               `uvm_info(`gfn, $sformatf("After push one item, tx_q size: %0d", tx_q.size), UVM_HIGH)
             end else begin
               `uvm_info(`gfn, $sformatf(
-                  "Drop tx item: %0h, tx_q size: %0d, uart_tx_clk_pulses: %0d",
-                  csr.get_mirrored_value(), tx_q.size(), uart_tx_clk_pulses), UVM_MEDIUM)
+                      "Drop tx item: %0h, tx_q size: %0d, uart_tx_clk_pulses: %0d",
+                      csr.get_mirrored_value(), tx_q.size(), uart_tx_clk_pulses_at_addr_phase
+                  ),
+                  UVM_MEDIUM)
             end
 
             loc_tx_q_size = tx_q.size();
@@ -334,7 +391,7 @@ class uart_scoreboard extends cip_base_scoreboard #(.CFG_T(uart_env_cfg),
               tx_idle_exp  = tx_q.size == 0 && tx_processing_item_q.size == 0;
               rx_full_exp  = rx_q.size == RxFifoDepth;
               rx_empty_exp = rx_q.size == 0;
-              rx_idle_exp  = (uart_rx_clk_pulses == 0) || !rx_enabled;
+              rx_idle_exp  = (uart_rx_clk_pulses_at_addr_phase == 0) || !rx_enabled;
             end
             DataChannel: begin // check at data phase
               int uart_bits;
@@ -352,13 +409,13 @@ class uart_scoreboard extends cip_base_scoreboard #(.CFG_T(uart_env_cfg),
                     && is_in_ignored_period(UartTx))) begin
                 `DV_CHECK_EQ(get_field_val(ral.status.txfull, item.d_data), tx_full_exp, $sformatf(
                     "check tx_full fail: tx_en = %0d, tx_q.size = %0d, uart_tx_clk_pulses = %0d",
-                    tx_enabled, tx_q_size_at_addr_phase, uart_tx_clk_pulses))
+                    tx_enabled, tx_q_size_at_addr_phase, uart_tx_clk_pulses_at_addr_phase))
               end
               if (!(rx_enabled && is_in_ignored_period(UartRx) &&
                     rx_q_size_at_addr_phase inside {RxFifoDepth - 1, RxFifoDepth})) begin
                 `DV_CHECK_EQ(get_field_val(ral.status.rxfull, item.d_data), rx_full_exp, $sformatf(
                     "check rx_full fail: rx_en = %0d, rx_q.size = %0d, uart_rx_clk_pulses = %0d",
-                    rx_enabled, rx_q_size_at_addr_phase, uart_rx_clk_pulses))
+                    rx_enabled, rx_q_size_at_addr_phase, uart_rx_clk_pulses_at_addr_phase))
               end
 
               // when tx_q.size = 1 and it's at last 2 cycles, can't predict if txempty is set
@@ -366,28 +423,28 @@ class uart_scoreboard extends cip_base_scoreboard #(.CFG_T(uart_env_cfg),
                     && is_in_ignored_period(UartTx))) begin
                 `DV_CHECK_EQ(get_field_val(ral.status.txempty, item.d_data), tx_empty_exp,
                     $sformatf("check tx_empty fail: uart_tx_clk_pulses = %0d, tx_q.size = %0d",
-                              uart_tx_clk_pulses, tx_q_size_at_addr_phase))
+                              uart_tx_clk_pulses_at_addr_phase, tx_q_size_at_addr_phase))
               end
               if (!(rx_q_size_at_addr_phase inside {0, 1} && is_in_ignored_period(UartRx))) begin
                 `DV_CHECK_EQ(get_field_val(ral.status.rxempty, item.d_data), rx_empty_exp,
                     $sformatf("check rx_empty fail: uart_rx_clk_pulses = %0d, rx_q.size = %0d",
-                              uart_rx_clk_pulses, rx_q_size_at_addr_phase))
+                              uart_rx_clk_pulses_at_addr_phase, rx_q_size_at_addr_phase))
               end
 
               // don't check when it's last item at last 2 cycles
               if (!(tx_q_size_at_addr_phase == 0 && is_in_ignored_period(UartTx))) begin
                 `DV_CHECK_EQ(get_field_val(ral.status.txidle, item.d_data), tx_idle_exp, $sformatf(
                     "check tx_idle fail: tx_en = %0d, tx_q.size = %0d, uart_tx_clk_pulses = %0d",
-                    tx_enabled, tx_q_size_at_addr_phase, uart_tx_clk_pulses))
+                    tx_enabled, tx_q_size_at_addr_phase, uart_tx_clk_pulses_at_addr_phase))
               end
               // rx_idle_exp will be clear/set during START/STOP bit,
               // but we don't use exactly same clk as DUT
               // check rx_idle==1 when uart_rx_clk_pulses>0, rx_idle==0 when uart_rx_clk_pulses==0
               // ignore checking when uart_rx_clk_pulses==1 or uart_rx_clk_pulses==uart_bits
-              if (!(uart_rx_clk_pulses inside {1, uart_bits}) || !rx_enabled) begin
+              if (!(uart_rx_clk_pulses_at_addr_phase inside {1, uart_bits}) || !rx_enabled) begin
                 `DV_CHECK_EQ(get_field_val(ral.status.rxidle, item.d_data), rx_idle_exp, $sformatf(
                     "check rx_idle fail: rx_en = %0d, uart_rx_clk_pulses = %0d",
-                    rx_enabled, uart_rx_clk_pulses))
+                    rx_enabled, uart_rx_clk_pulses_at_addr_phase))
               end
             end
           endcase
@@ -481,8 +538,9 @@ class uart_scoreboard extends cip_base_scoreboard #(.CFG_T(uart_env_cfg),
                 // allow +/-1 difference as txlvl is reduced when previous item is in stop phase
                 // match, do nothing
               end else begin
-                `uvm_error(`gfn, $sformatf("txlvl mismatch exp: %0d (+/-1), act: %0d,\
-                                 clk_pulses: %0d", txlvl_exp, txlvl_act, uart_tx_clk_pulses))
+                `uvm_error(`gfn, $sformatf(
+                    "txlvl mismatch exp: %0d (+/-1), act: %0d, clk_pulses: %0d",
+                    txlvl_exp, txlvl_act, uart_tx_clk_pulses_at_addr_phase))
               end
 
               if (rxlvl_act == rxlvl_exp) begin
@@ -492,8 +550,9 @@ class uart_scoreboard extends cip_base_scoreboard #(.CFG_T(uart_env_cfg),
                 // allow +/-1 difference as rxlvl is reduced when previous item is in stop phase
                 // match, do nothing
               end else begin
-                `uvm_error(`gfn, $sformatf("rxlvl mismatch exp: %0d (+/-1), act: %0d,\
-                                 clk_pulses: %0d", rxlvl_exp, rxlvl_act, uart_rx_clk_pulses))
+                `uvm_error(`gfn, $sformatf(
+                    "rxlvl mismatch exp: %0d (+/-1), act: %0d, clk_pulses: %0d",
+                    rxlvl_exp, rxlvl_act, uart_rx_clk_pulses_at_addr_phase))
               end
               do_read_check = 1'b0;
 
@@ -562,8 +621,10 @@ class uart_scoreboard extends cip_base_scoreboard #(.CFG_T(uart_env_cfg),
     tx_processing_item_q.delete();
     rx_q.delete();
     // reset local variables
-    uart_tx_clk_pulses   = 0;
-    uart_rx_clk_pulses   = 0;
+    uart_tx_clk_pulses_at_addr_phase = 0;
+    uart_rx_clk_pulses_at_addr_phase = 0;
+    rx_ignore_period_counter               = 0;
+    rx_ignore_period_counter_at_addr_phase = 0;
     tx_q_size_at_addr_phase = 0;
     rx_q_size_at_addr_phase = 0;
     tx_enabled           = ral.ctrl.tx.get_reset();

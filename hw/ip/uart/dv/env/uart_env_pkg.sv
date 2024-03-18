@@ -105,8 +105,13 @@ package uart_env_pkg;
   // TX finishes the item at the beginning of last cycle and update reg value
   // in the last 2 cycles, need to avoid driving and checking
   `define TX_IGNORED_PERIOD {1, 2}
-  // RX finishes the item at the middle of last cycle and update reg value
-  // in the last cycle, need to avoid driving and checking
+  // RX finishes receiving and updates register values at some point during or just after the
+  // reception of the last bit of each byte (when uart_rx_clk_pulses=1). Usually this happens near
+  // the middle of the cycle, but can occur anywhere in the cycle due to NCO clock division error,
+  // or occasionally just after the cycle at high baud rates due to the main-clock-based delays
+  // growing proportionally larger and combining with other delays. Avoid driving and/or checking
+  // during this time or apply a margin to expected values to account for the uncertainty over
+  // whether RX has finished or not.
   `define RX_IGNORED_PERIOD {1}
 
   // package sources
