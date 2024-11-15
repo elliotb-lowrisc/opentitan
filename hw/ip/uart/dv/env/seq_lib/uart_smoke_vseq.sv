@@ -40,11 +40,13 @@ class uart_smoke_vseq extends uart_tx_rx_vseq;
       byte tx_byte;
 
       wait_when_in_ignored_period(.tx(1));
+      if (cfg.under_reset) return;
       `DV_CHECK_STD_RANDOMIZE_FATAL(tx_byte)
       send_tx_byte(tx_byte);
       // if no delay in TL-UL trans, DUT takes 1 more cycle to update status reg
-      cfg.clk_rst_vif.wait_clks(1);
+      cfg.clk_rst_vif.wait_clks_or_rst(1);
       spinwait_txidle();
+      if (cfg.under_reset) return;
     end
   endtask : process_tx
 
@@ -54,9 +56,11 @@ class uart_smoke_vseq extends uart_tx_rx_vseq;
       byte rx_byte;
       bit [TL_DW-1:0] dut_rdata;
 
+      if (cfg.under_reset) return;
       `DV_CHECK_STD_RANDOMIZE_FATAL(rx_byte)
       send_rx_byte(rx_byte);
       spinwait_rxidle();
+      if (cfg.under_reset) return;
       csr_rd(.ptr(ral.rdata), .value(dut_rdata));
       if (!cfg.under_reset) `DV_CHECK_EQ(rx_byte, dut_rdata)
     end

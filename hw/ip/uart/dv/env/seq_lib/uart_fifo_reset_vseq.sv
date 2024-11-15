@@ -19,7 +19,7 @@ class uart_fifo_reset_vseq extends uart_fifo_overflow_vseq;
     fork
       begin
         `DV_CHECK_MEMBER_RANDOMIZE_FATAL(dly_to_access_fifo)
-        cfg.clk_rst_vif.wait_clks(dly_to_access_fifo);
+        cfg.clk_rst_vif.wait_clks_or_rst(dly_to_access_fifo);
         // can't predict if the item is clear or not, when reset fifo at almost done period
         wait_when_in_ignored_period(.tx(do_clear_tx_fifo), .rx(do_clear_rx_fifo));
         clear_fifos(.clear_tx_fifo(do_clear_tx_fifo), .clear_rx_fifo(do_clear_rx_fifo));

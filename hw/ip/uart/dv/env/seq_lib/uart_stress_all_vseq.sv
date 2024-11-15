@@ -52,6 +52,8 @@ class uart_stress_all_vseq extends uart_base_vseq;
 
       `uvm_info(`gfn, $sformatf("starting stress_all sub-sequence %s", seq_names[seq_idx]), UVM_LOW)
       uart_vseq.start(p_sequencer);
+
+      if (cfg.under_reset) return;
     end
   endtask : body
 

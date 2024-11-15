@@ -27,9 +27,10 @@ class uart_rx_oversample_vseq extends uart_tx_rx_vseq;
   task body();
     int uart_xfer_bits;
     num_bits = ral.val.rx.get_n_bits();
+    // Monitors will be restored by agent at end of reset, if one happens.
     cfg.m_uart_agent_cfg.en_rx_monitor = 0;
     for (int i = 1; i <= num_trans; i++) begin
-      if (cfg.stop_transaction_generators()) break;
+      if (cfg.under_reset) return;
       `DV_CHECK_RANDOMIZE_FATAL(this)
       uart_init();
 
@@ -37,7 +38,7 @@ class uart_rx_oversample_vseq extends uart_tx_rx_vseq;
       // don't use big number here, the way TB measures cycle isn't the same as DUT
       // need to re-sync again after certain cycles
       repeat ($urandom_range(1, 3)) begin
-        if (cfg.stop_transaction_generators()) break;
+        if (cfg.under_reset) return;
         drive_rx_oversampled_val();
       end
       `uvm_info(`gfn, $sformatf("finished run %0d/%0d", i, num_trans), UVM_LOW)
@@ -48,6 +49,7 @@ class uart_rx_oversample_vseq extends uart_tx_rx_vseq;
     #(cfg.m_uart_agent_cfg.vif.uart_clk_period * uart_xfer_bits);
 
     cfg.m_uart_agent_cfg.en_rx_monitor = 1;
+
     clear_fifos(.clear_rx_fifo(1), .clear_tx_fifo(0));
     // clear all interrupts as the driving of rx value in seq may trigger interrupt that scb
     // doesn't expect
@@ -70,10 +72,12 @@ class uart_rx_oversample_vseq extends uart_tx_rx_vseq;
     // drive constant value and find all 1s/0s pattern
     cfg.m_uart_agent_cfg.vif.uart_rx = pattern[0];
     csr_spinwait(.ptr(ral.val.rx), .exp_data(pattern));
+    if (cfg.under_reset) return;
     // flip a bit and find the clk edge
     pattern[0] = ~pattern[0];
     cfg.m_uart_agent_cfg.vif.uart_rx = pattern[0];
     csr_spinwait(.ptr(ral.val.rx), .exp_data(pattern));
+    if (cfg.under_reset) return;
     `uvm_info(`gfn, $sformatf("found matching pattern %x", pattern), UVM_MEDIUM)
     // find offset to account for the fixed delay of register reading, only relevant at high baud
     fixed_delay_time = cfg.clk_rst_vif.clk_period_ps * 1ps * 3;
@@ -94,6 +98,8 @@ class uart_rx_oversample_vseq extends uart_tx_rx_vseq;
     for (int i = num_bits - 1; i >= 0; i--) begin
       cfg.m_uart_agent_cfg.vif.uart_rx = data[i];
       #(get_oversampled_baud_clk_period());
+      // RX value will be restored by agent at end of reset, if one happens.
+      if (cfg.under_reset) return;
     end
     cfg.m_uart_agent_cfg.vif.uart_rx = 1; // back to default value
     // launch check in a parallel thread to avoid losing clock alignment in the main thread

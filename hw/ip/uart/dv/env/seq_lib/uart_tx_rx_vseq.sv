@@ -102,13 +102,13 @@ class uart_tx_rx_vseq extends uart_base_vseq;
 
   task body();
     fork
-      begin
-        while (do_interrupt) process_interrupts();
-      end
+      // begin
+      //   while (do_interrupt && !cfg.under_reset) process_interrupts();
+      // end
       begin
         // repeat test sequencing upto 50 times
         for (int i = 1; i <= num_trans; i++) begin
-          if (cfg.stop_transaction_generators()) break;
+          if (cfg.under_reset) break;
           // start each new run by randomizing dut parameters
           `DV_CHECK_RANDOMIZE_FATAL(this)
 
@@ -154,11 +154,11 @@ class uart_tx_rx_vseq extends uart_base_vseq;
     bit [TL_DW-1:0] intr_status, clear_intr;
     bit clear_rx_intr, clear_tx_intr;
 
-    // avoid zero delay loop during reset
-    wait(!cfg.under_reset);
+    if (cfg.under_reset) return;
     // read interrupt
     `DV_CHECK_MEMBER_RANDOMIZE_FATAL(dly_to_access_intr)
-    cfg.clk_rst_vif.wait_clks(dly_to_access_intr);
+    cfg.clk_rst_vif.wait_clks_or_rst(dly_to_access_intr);
+    if (cfg.under_reset) return;
     csr_rd(.ptr(ral.intr_state), .value(intr_status));
 
     // clear interrupt, randomly clear the interrupt that is set, and
@@ -168,7 +168,8 @@ class uart_tx_rx_vseq extends uart_base_vseq;
                                            clear_intr[i] -> intr_status[i] == 1;
                                        })
     `DV_CHECK_MEMBER_RANDOMIZE_FATAL(dly_to_access_intr)
-    cfg.clk_rst_vif.wait_clks(dly_to_access_intr);
+    cfg.clk_rst_vif.wait_clks_or_rst(dly_to_access_intr);
+    if (cfg.under_reset) return;
 
     // for fifo interrupt, parity/frame error, don't clear it at ignored period
     // as it hasn't been checked
@@ -176,6 +177,7 @@ class uart_tx_rx_vseq extends uart_base_vseq;
     clear_rx_intr = clear_intr[RxWatermark] | clear_intr[RxOverflow] | clear_intr[RxFrameErr] |
                     clear_intr[RxParityErr];
     wait_when_in_ignored_period(clear_tx_intr, clear_rx_intr);
+    if (cfg.under_reset) return;
     csr_wr(.ptr(ral.intr_state), .value(clear_intr));
   endtask
 
@@ -185,12 +187,15 @@ class uart_tx_rx_vseq extends uart_base_vseq;
       `DV_CHECK_MEMBER_RANDOMIZE_FATAL(dly_to_next_tx_trans)
       `DV_CHECK_MEMBER_RANDOMIZE_FATAL(wait_for_tx_idle)
 
-      cfg.clk_rst_vif.wait_clks(dly_to_next_tx_trans);
+      cfg.clk_rst_vif.wait_clks_or_rst(dly_to_next_tx_trans);
+      if (cfg.under_reset) return;
       wait_for_tx_fifo_not_full();
       wait_when_in_ignored_period(.tx(1));
+      if (cfg.under_reset) return;
       `DV_CHECK_STD_RANDOMIZE_FATAL(tx_byte)
       send_tx_byte(tx_byte);
       if (wait_for_tx_idle) spinwait_txidle();
+      if (cfg.under_reset) return;
     end
   endtask : process_tx
 
@@ -207,10 +212,13 @@ class uart_tx_rx_vseq extends uart_base_vseq;
           `DV_CHECK_MEMBER_RANDOMIZE_FATAL(wait_for_rx_idle)
           `DV_CHECK_STD_RANDOMIZE_FATAL(rx_byte)
 
-          cfg.clk_rst_vif.wait_clks(dly_to_next_rx_trans);
+          cfg.clk_rst_vif.wait_clks_or_rst(dly_to_next_rx_trans);
+          if (cfg.under_reset) break;
           wait_for_rx_fifo_not_full();
+          if (cfg.under_reset) break;
           send_rx_byte(rx_byte);
           if (wait_for_rx_idle) spinwait_rxidle();
+          if (cfg.under_reset) break;
         end
         send_rx_done = 1; // to end reading RX thread
       end
@@ -218,8 +226,8 @@ class uart_tx_rx_vseq extends uart_base_vseq;
         while (!send_rx_done && !cfg.under_reset) begin
           // csr read is much faster than uart transfer, use bigger delay
           `DV_CHECK_MEMBER_RANDOMIZE_FATAL(dly_to_rx_read)
-          cfg.clk_rst_vif.wait_clks(dly_to_rx_read);
-          wait_if_stop_transaction_generators();
+          cfg.clk_rst_vif.wait_clks_or_rst(dly_to_rx_read);
+          if (cfg.under_reset) break;
           rand_read_rx_byte(weight_to_skip_rx_read);
         end
       end
@@ -232,7 +240,7 @@ class uart_tx_rx_vseq extends uart_base_vseq;
       begin // TX
         wait_for_all_tx_bytes();
         // tx fifo is empty but still need to wait for last tx item to be flushed out
-        cfg.m_uart_agent_cfg.vif.wait_for_tx_idle();
+        if (!cfg.under_reset) cfg.m_uart_agent_cfg.vif.wait_for_tx_idle();
       end
       begin // RX
         // wait for last rx item to be completed before read all of them

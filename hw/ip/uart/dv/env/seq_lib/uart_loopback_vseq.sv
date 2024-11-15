@@ -20,7 +20,7 @@ class uart_loopback_vseq extends uart_tx_rx_vseq;
 
   task body();
     for (int i = 1; i <= num_trans; i++) begin
-      if (cfg.stop_transaction_generators()) break;
+      if (cfg.under_reset) return;
       `DV_CHECK_RANDOMIZE_FATAL(this)
       uart_init();
 
@@ -41,13 +41,15 @@ class uart_loopback_vseq extends uart_tx_rx_vseq;
 
     `DV_CHECK_STD_RANDOMIZE_FATAL(tx_byte)
     `DV_CHECK_MEMBER_RANDOMIZE_FATAL(dly_to_next_tx_trans)
-    cfg.clk_rst_vif.wait_clks(dly_to_next_tx_trans);
+    cfg.clk_rst_vif.wait_clks_or_rst(dly_to_next_tx_trans);
+    if (cfg.under_reset) return;
 
     // drive tx data and expect to receive it rx fifo
     send_tx_byte(tx_byte);
     // wait for loopback to complete
     spinwait_txidle();
     spinwait_rxidle();
+    if (cfg.under_reset) return;
     csr_rd_check(.ptr(ral.rdata), .compare_value(tx_byte));
     // clear TxDone interrupt
     csr_wr(.ptr(ral.intr_state), .value(1 << TxDone));
@@ -66,7 +68,8 @@ class uart_loopback_vseq extends uart_tx_rx_vseq;
     ral.ctrl.llpbk.set(1);
     csr_update(ral.ctrl);
 
-    // disable monitor, as it can't handle these random data
+    // Disable monitor, as it can't handle these random data.
+    // Monitors will be restored by agent at end of reset, if one happens.
     cfg.m_uart_agent_cfg.en_tx_monitor = 0;
     cfg.m_uart_agent_cfg.en_rx_monitor = 0;
     fork
@@ -74,6 +77,8 @@ class uart_loopback_vseq extends uart_tx_rx_vseq;
         fork
           // drive RX with random data and random delay
           repeat ($urandom_range(100, 1000)) begin
+            if (cfg.under_reset) break;
+            // RX will be restored by agent at end of reset, if one happens.
             cfg.m_uart_agent_cfg.vif.uart_rx = $urandom_range(0, 1);
             `DV_CHECK_MEMBER_RANDOMIZE_WITH_FATAL(dly_to_next_rx_trans,
                                                   dly_to_next_rx_trans > 0;)
@@ -83,14 +88,16 @@ class uart_loopback_vseq extends uart_tx_rx_vseq;
           forever begin
             @(cfg.m_uart_agent_cfg.vif.uart_tx || cfg.m_uart_agent_cfg.vif.uart_rx);
             #1ps; // avoid race condition
-            if (!cfg.under_reset) begin
-              `DV_CHECK_EQ(cfg.m_uart_agent_cfg.vif.uart_tx, cfg.m_uart_agent_cfg.vif.uart_rx)
-            end
+            if (cfg.under_reset) break;
+            `DV_CHECK_EQ(cfg.m_uart_agent_cfg.vif.uart_tx, cfg.m_uart_agent_cfg.vif.uart_rx)
           end
+          // Exit early if get reset
+          wait (cfg.under_reset);
         join_any
         disable fork;
       end // isolation_fork
     join
+    if (cfg.under_reset) return;
 
     cfg.m_uart_agent_cfg.vif.uart_rx = 1; // back to default value
     cfg.m_uart_agent_cfg.en_tx_monitor = 1;
@@ -99,9 +106,10 @@ class uart_loopback_vseq extends uart_tx_rx_vseq;
     // CDC sync on RX input adds propagation delay, so wait some cycles to ensure the internal RX
     // value is 1 before disabling line loopback. Otherwise, unexpected value (0) may be propagated
     // to RX datapath and be falsely interpreted as the beginning of a START bit.
-    cfg.clk_rst_vif.wait_clks(2);
+    cfg.clk_rst_vif.wait_clks_or_rst(2);
     // If noise filter is on, need an additional cycle of delay.
-    if (en_noise_filter) cfg.clk_rst_vif.wait_clks(1);
+    if (en_noise_filter) cfg.clk_rst_vif.wait_clks_or_rst(1);
+    if (cfg.under_reset) return;
 
     ral.ctrl.llpbk.set(0);
     ral.fifo_ctrl.rxrst.set(1);

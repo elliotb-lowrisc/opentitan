@@ -15,7 +15,10 @@ class uart_env_cfg extends cip_base_env_cfg #(.RAL_T(uart_reg_block));
     `uvm_field_object(m_uart_agent_cfg, UVM_DEFAULT)
   `uvm_object_utils_end
 
-  `uvm_object_new
+  function new (string name="");
+    super.new(name);
+    can_reset_with_csr_accesses = 1'b1;
+  endfunction
 
   virtual function void initialize(bit [TL_AW-1:0] csr_base_addr = '1);
     list_of_alerts = uart_env_pkg::LIST_OF_ALERTS;

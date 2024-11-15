@@ -14,16 +14,28 @@ class uart_rx_start_bit_filter_vseq extends uart_smoke_vseq;
   virtual task send_rx_byte(byte data);
     uint uart_clk_period_ps = cfg.m_uart_agent_cfg.vif.uart_clk_period / 1ps;
 
-    // monitor doesn't have start bit filter, need to disable it while driving filtered start bit
+    // Monitor doesn't have start bit filter, need to disable it while driving filtered start bit.
+    // Monitors will be restored by agent at end of reset, if one happens.
     cfg.m_uart_agent_cfg.en_rx_monitor = 0;
-    repeat ($urandom_range(10, 100)) begin
-      // drive 0 for up to 0.4 uart clk and 1 for 0.8 clk. Design samples start bit (0) first,
-      // after 0.5 clk, design will sample 1 and should drop this start bit
-      // need stable period > 0.5, use 0.8 clk to have enough margin
-      cfg.m_uart_agent_cfg.vif.drive_uart_rx_glitch(
-          .max_glitch_ps(uart_clk_period_ps * 0.4),
-          .stable_ps_after_glitch(uart_clk_period_ps * 0.8));
-    end
+    fork
+      begin // isolation_fork
+        fork
+          repeat ($urandom_range(10, 100)) begin
+            // drive 0 for up to 0.4 uart clk and 1 for 0.8 clk. Design samples start bit (0) first,
+            // after 0.5 clk, design will sample 1 and should drop this start bit
+            // need stable period > 0.5, use 0.8 clk to have enough margin
+            cfg.m_uart_agent_cfg.vif.drive_uart_rx_glitch(
+                .max_glitch_ps(uart_clk_period_ps * 0.4),
+                .stable_ps_after_glitch(uart_clk_period_ps * 0.8));
+          end
+          // Exit early if get reset
+          wait (cfg.under_reset);
+        join_any
+        disable fork;
+      end // isolation_fork
+    join
+    if (cfg.under_reset) return;
+
     cfg.m_uart_agent_cfg.en_rx_monitor = 1;
     csr_rd_check(.ptr(ral.status.rxidle), .compare_value(1));
 

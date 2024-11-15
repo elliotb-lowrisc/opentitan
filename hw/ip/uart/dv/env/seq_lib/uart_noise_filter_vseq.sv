@@ -32,17 +32,28 @@ class uart_noise_filter_vseq extends uart_tx_rx_vseq;
   virtual task send_rx_byte(byte data);
     int core_clk_period_ps = cfg.clk_rst_vif.clk_period_ps;
 
-    // monitor doesn't filter glitch less than 1 core cycle, need to disable it
+    // Monitor doesn't filter glitch less than 1 core cycle, need to disable it.
+    // Monitors will be restored by agent at end of reset, if one happens.
     cfg.m_uart_agent_cfg.en_rx_monitor = 0;
     if (en_noise_filter) begin
-      // uart clk is much slower than core clk
-      // need large number to check if the glitch has no impact to uart
-      repeat ($urandom_range(1, 10_000)) begin
-        cfg.m_uart_agent_cfg.vif.drive_uart_rx_glitch(
-            .max_glitch_ps(core_clk_period_ps), // 1 core clk
-            // need 3 core clk cycles to push out the glitch before next drive
-            .stable_ps_after_glitch(core_clk_period_ps * 3));
-      end
+      fork
+        begin // isolation_fork
+          fork
+            // uart clk is much slower than core clk
+            // need large number to check if the glitch has no impact to uart
+            repeat ($urandom_range(1, 10_000)) begin
+              cfg.m_uart_agent_cfg.vif.drive_uart_rx_glitch(
+                  .max_glitch_ps(core_clk_period_ps), // 1 core clk
+                  // need 3 core clk cycles to push out the glitch before next drive
+                  .stable_ps_after_glitch(core_clk_period_ps * 3));
+            end
+            // Exit early if get reset
+            wait (cfg.under_reset);
+          join_any
+          disable fork;
+        end // isolation_fork
+      join
+      if (cfg.under_reset) return;
       csr_rd_check(.ptr(ral.status.rxidle), .compare_value(1));
     end
     cfg.m_uart_agent_cfg.en_rx_monitor = 1;
