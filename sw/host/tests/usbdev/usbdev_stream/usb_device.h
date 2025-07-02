@@ -359,13 +359,13 @@ class USBDevice {
   /**
    * Connect device to the USB.
    *
-   * @param true iff the operation was succesful.
+   * @param true iff the operation was successful.
    */
   bool Connect();
   /**
    * Disconnect device from the USB.
    *
-   * @param true iff the operation was succesful.
+   * @param true iff the operation was successful.
    */
   bool Disconnect();
   /**

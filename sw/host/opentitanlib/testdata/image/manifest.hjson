@@ -70,7 +70,7 @@
       "0x00000000", "0x00000000",
       ],
     /**
-     * Device Silicon Creator manufacting status compared against the
+     * Device Silicon Creator manufacturing status compared against the
      * `CREATOR_SW_MANUF_STATUS` value stored in the `CREATOR_SW_CFG` partition in
      * OTP.
      *

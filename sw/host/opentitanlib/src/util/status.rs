@@ -158,7 +158,7 @@ impl StatusCreateRecord {
     pub fn get_module_id(&self) -> Result<String> {
         // In order to avoid reimplementing the algorithm, we first create a temporary
         // status with status_create that we then decode using status_extract.
-        // If the value of MODULE_ID was not overriden in the file, then it is defined as
+        // If the value of MODULE_ID was not overridden in the file, then it is defined as
         //   extern const uint32_t MODULE_ID;
         // in status.h, and therefore it is not known at compile time. In this case, on the
         // actual device, the value of MODULE_ID is 0.

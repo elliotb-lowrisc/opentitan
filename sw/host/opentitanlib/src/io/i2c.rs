@@ -161,7 +161,7 @@ pub trait Bus {
         Err(I2cError::InvalidPin.into())
     }
 
-    /// Sets the "default" device address, used in cases when not overriden by parameter to
+    /// Sets the "default" device address, used in cases when not overridden by parameter to
     /// `run_transaction()`.
     fn set_default_address(&self, addr: u8) -> Result<()>;
 

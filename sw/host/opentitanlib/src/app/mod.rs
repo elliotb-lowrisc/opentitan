@@ -963,7 +963,7 @@ impl TransportWrapper {
             self.transport.apply_default_configuration()?;
             self.apply_pin_configurations(&self.pin_conf_map, None)?;
         }
-        // Clear cache, which could contain settings manually overriden to deviate from the
+        // Clear cache, which could contain settings manually overridden to deviate from the
         // defaults in configuration files.
         self.pin_instance_map.borrow_mut().clear();
         self.spi_physical_map.borrow_mut().clear();

@@ -274,7 +274,7 @@ impl<'a> ElfDebugger<'a> {
     /// Execute until the current function returns.
     ///
     /// This implementation does not use the debugging information from ELF files, and only uses the RA register,
-    /// so it only works when RA has not been overriden, e.g. at the preamble of the function.
+    /// so it only works when RA has not been overridden, e.g. at the preamble of the function.
     pub fn finish(&mut self, timeout: Duration) -> Result<()> {
         let ra = self.read_reg(RiscvGpr::RA)?;
         self.run_until(ra, timeout)
