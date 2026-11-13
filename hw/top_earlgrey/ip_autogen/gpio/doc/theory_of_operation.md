@@ -84,7 +84,7 @@ If the output enable is true (and the GPIO is connected to a chip-level pad), th
 
 #### GPIO Inputs as HW Straps
 
-The GPIO controller provides an optional feature to sample GPIO input values as hardware configuration straps.
+If the `GpioAsHwStrapsEn` synthesis parameter is set, the GPIO controller can sample GPIO input values as hardware configuration straps.
 After each reset, on the first cycle when the `strap_en_i` signal is asserted, the GPIO detects its transition from low to high.
 One clock cycle later, it samples the GPIO input values and stores them in the `HW_STRAPS_DATA_IN` register.
 The `strap_en_i` signal transition from low to high is expected only once after the reset process.

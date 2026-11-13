@@ -1060,6 +1060,8 @@
             '''
             The strap enable signal tells gpio to take a snapshot of the input pins.
             The behaviour of this signal after that event will have no effect.
+
+            If the `GpioAsHwStrapsEn` synthesis parameter is false this interface is unused.
             '''
           struct: logic
           type: uni
@@ -1071,7 +1073,12 @@
         }
         {
           name: sampled_straps
-          desc: This vector contains the sampled strap values.
+          desc:
+            '''
+            This vector contains the sampled strap values.
+
+            If the `GpioAsHwStrapsEn` synthesis parameter is false this interface is unused.
+            '''
           struct: gpio_straps
           package: gpio_pkg
           type: uni
@@ -1087,6 +1094,8 @@
             '''
             Incoming RACL policy vector from a racl_ctrl instance.
             The policy selection vector (parameter) selects the policy for each register.
+
+            If the `EnableRacl` synthesis parameter is false this interface is unused.
             '''
           struct: racl_policy_vec
           package: top_racl_pkg
@@ -1098,7 +1107,12 @@
         }
         {
           name: racl_error
-          desc: RACL error log information of this module.
+          desc:
+            '''
+            RACL error log information of this module.
+
+            If the `EnableRacl` synthesis parameter is false this interface is unused.
+            '''
           struct: racl_error_log
           package: top_racl_pkg
           type: uni
@@ -1193,6 +1207,8 @@
             '''
             The strap enable signal tells gpio to take a snapshot of the input pins.
             The behaviour of this signal after that event will have no effect.
+
+            If the `GpioAsHwStrapsEn` synthesis parameter is false this interface is unused.
             '''
           struct: logic
           type: uni
@@ -1204,7 +1220,12 @@
         }
         {
           name: sampled_straps
-          desc: This vector contains the sampled strap values.
+          desc:
+            '''
+            This vector contains the sampled strap values.
+
+            If the `GpioAsHwStrapsEn` synthesis parameter is false this interface is unused.
+            '''
           struct: gpio_straps
           package: gpio_pkg
           type: uni
@@ -1220,6 +1241,8 @@
             '''
             Incoming RACL policy vector from a racl_ctrl instance.
             The policy selection vector (parameter) selects the policy for each register.
+
+            If the `EnableRacl` synthesis parameter is false this interface is unused.
             '''
           struct: racl_policy_vec
           package: top_racl_pkg
@@ -1231,7 +1254,12 @@
         }
         {
           name: racl_error
-          desc: RACL error log information of this module.
+          desc:
+            '''
+            RACL error log information of this module.
+
+            If the `EnableRacl` synthesis parameter is false this interface is unused.
+            '''
           struct: racl_error_log
           package: top_racl_pkg
           type: uni
@@ -25507,6 +25535,8 @@
           '''
           The strap enable signal tells gpio to take a snapshot of the input pins.
           The behaviour of this signal after that event will have no effect.
+
+          If the `GpioAsHwStrapsEn` synthesis parameter is false this interface is unused.
           '''
         struct: logic
         type: uni
@@ -25518,7 +25548,12 @@
       }
       {
         name: sampled_straps
-        desc: This vector contains the sampled strap values.
+        desc:
+          '''
+          This vector contains the sampled strap values.
+
+          If the `GpioAsHwStrapsEn` synthesis parameter is false this interface is unused.
+          '''
         struct: gpio_straps
         package: gpio_pkg
         type: uni
@@ -25534,6 +25569,8 @@
           '''
           Incoming RACL policy vector from a racl_ctrl instance.
           The policy selection vector (parameter) selects the policy for each register.
+
+          If the `EnableRacl` synthesis parameter is false this interface is unused.
           '''
         struct: racl_policy_vec
         package: top_racl_pkg
@@ -25545,7 +25582,12 @@
       }
       {
         name: racl_error
-        desc: RACL error log information of this module.
+        desc:
+          '''
+          RACL error log information of this module.
+
+          If the `EnableRacl` synthesis parameter is false this interface is unused.
+          '''
         struct: racl_error_log
         package: top_racl_pkg
         type: uni
@@ -25574,6 +25616,8 @@
           '''
           The strap enable signal tells gpio to take a snapshot of the input pins.
           The behaviour of this signal after that event will have no effect.
+
+          If the `GpioAsHwStrapsEn` synthesis parameter is false this interface is unused.
           '''
         struct: logic
         type: uni
@@ -25585,7 +25629,12 @@
       }
       {
         name: sampled_straps
-        desc: This vector contains the sampled strap values.
+        desc:
+          '''
+          This vector contains the sampled strap values.
+
+          If the `GpioAsHwStrapsEn` synthesis parameter is false this interface is unused.
+          '''
         struct: gpio_straps
         package: gpio_pkg
         type: uni
@@ -25601,6 +25650,8 @@
           '''
           Incoming RACL policy vector from a racl_ctrl instance.
           The policy selection vector (parameter) selects the policy for each register.
+
+          If the `EnableRacl` synthesis parameter is false this interface is unused.
           '''
         struct: racl_policy_vec
         package: top_racl_pkg
@@ -25612,7 +25663,12 @@
       }
       {
         name: racl_error
-        desc: RACL error log information of this module.
+        desc:
+          '''
+          RACL error log information of this module.
+
+          If the `EnableRacl` synthesis parameter is false this interface is unused.
+          '''
         struct: racl_error_log
         package: top_racl_pkg
         type: uni

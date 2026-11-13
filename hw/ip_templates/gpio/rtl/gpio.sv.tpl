@@ -176,6 +176,7 @@ module ${module_instance_name}
     end
 
     // Simple FSM controlling the input period counter.
+    `ASSERT_KNOWN(InpPrdCntStateQKnown_A, inp_prd_cnt_state_q)
     always_comb begin
       hw2reg.inp_prd_cnt_ctrl[i].enable.de = 1'b0;
       hw2reg.inp_prd_cnt_val[i].de = 1'b0;
@@ -534,7 +535,22 @@ module ${module_instance_name}
     .intg_err_o (alerts[0])
   );
 
+% if per_pin_view:
+  // The per-pin register view requires a GPIO width of 32
+  `ASSERT_INIT(NumIOsPerPinView_A, NumIOs == 32)
+% else
+  // GPIO widths less than 17 are not expected to work.
+  // Additionally, GPIO widths other than 32 have not been verified to work.
+  `ASSERT_INIT(NumIOsGeneral_A, NumIOs >= 17)
+% endif
+
+  // No valid strap values are to be reported without the strap
+  `ASSERT(NoStrapValidWithoutEnable_A, sampled_straps_o.valid |-> strap_en_i);
+
   // Assert Known: Outputs
+  `ASSERT_KNOWN(TlODValidKnown_A, tl_o.d_valid)
+  `ASSERT_KNOWN(TlOAReadyKnown_A, tl_o.a_ready)
+  `ASSERT_KNOWN(SampledStrapsOKnown_A,  sampled_straps_o)
   `ASSERT_KNOWN(IntrGpioKnown, intr_gpio_o)
   `ASSERT_KNOWN(CioGpioEnOKnown, cio_gpio_en_o)
   `ASSERT_KNOWN(CioGpioOKnown, cio_gpio_o)
